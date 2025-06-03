@@ -16,6 +16,7 @@ import 'package:harmony_event/registration_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:harmony_event/notification_page.dart';
 import 'package:harmony_event/detail_profile_page.dart';
+import 'package:harmony_event/edit_event_page.dart';
 
 final String _defaultImage = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80';
 
@@ -1288,12 +1289,21 @@ class DetailEventPage extends StatefulWidget {
 class _DetailEventPageState extends State<DetailEventPage> {
   String? _userStatus;
   bool _isRegistered = false;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _fetchCurrentUserStatus();
     _checkRegistrationStatus();
+    _getCurrentUserId();
+  }
+
+  Future<void> _getCurrentUserId() async {
+    final user = FirebaseAuth.instance.currentUser;
+    setState(() {
+      _currentUserId = user?.uid;
+    });
   }
 
   Future<void> _fetchCurrentUserStatus() async {
@@ -1328,14 +1338,50 @@ class _DetailEventPageState extends State<DetailEventPage> {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = widget.event['imageUrl'];
-    final bool isPaid = widget.event['isPaid'] == true || widget.event['isPaid'] == 'true';
-    final String? harga = widget.event['harga'];
-    final String? uploaderUid = widget.event['uploaderUid'];
+    if (widget.eventKey != null) {
+      // Ambil data event secara realtime dari database
+      return StreamBuilder<DatabaseEvent>(
+        stream: FirebaseDatabase.instance.ref('item').child(widget.eventKey!).onValue,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: const Color(0xFF6CB6FF),
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: const Text('Detail Kegiatan', style: TextStyle(color: Colors.white)),
+                centerTitle: true,
+              ),
+              body: const Center(child: Text('Event tidak ditemukan atau sudah dihapus.')),
+            );
+          }
+          final event = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
+          return _buildDetailContent(context, event);
+        },
+      );
+    } else {
+      // Fallback: gunakan data event yang dikirim
+      return _buildDetailContent(context, widget.event);
+    }
+  }
+
+  Widget _buildDetailContent(BuildContext context, Map event) {
+    final imageUrl = event['imageUrl'];
+    final bool isPaid = event['isPaid'] == true || event['isPaid'] == 'true';
+    final String? harga = event['harga'];
+    final String? uploaderUid = event['uploaderUid'];
     
     // Get date range for detail page
-    final String? waktuMulai = widget.event['waktuMulai'];
-    final String? waktuSelesai = widget.event['waktuSelesai'];
+    final String? waktuMulai = event['waktuMulai'];
+    final String? waktuSelesai = event['waktuSelesai'];
     String waktuDisplay = '-';
     if (waktuMulai != null && waktuMulai.isNotEmpty && waktuSelesai != null && waktuSelesai.isNotEmpty) {
       final String formattedStart = _formatTanggal(waktuMulai);
@@ -1360,6 +1406,68 @@ class _DetailEventPageState extends State<DetailEventPage> {
         ),
         title: const Text('Detail Kegiatan', style: TextStyle(color: Colors.white)),
         centerTitle: true,
+        actions: [
+          if (_currentUserId != null && _currentUserId == uploaderUid)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onSelected: (value) async {
+                if (value == 'edit') {
+                  // Navigasi ke halaman edit event
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditEventPage(event: widget.event, eventKey: widget.eventKey!),
+                    ),
+                  );
+                  if (updated == true) {
+                    // Jika berhasil update, refresh halaman detail
+                    setState(() {});
+                  }
+                } else if (value == 'delete') {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Konfirmasi Hapus'),
+                      content: const Text('Apakah Anda yakin ingin menghapus event ini?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Batal'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true && widget.eventKey != null) {
+                    try {
+                      await FirebaseDatabase.instance.ref('item').child(widget.eventKey!).remove();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Event berhasil dihapus!')),
+                      );
+                      Navigator.pop(context); // Kembali setelah hapus
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Gagal menghapus event: $e')),
+                      );
+                    }
+                  }
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Text('Edit'),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Delete'),
+                ),
+              ],
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(
