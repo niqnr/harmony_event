@@ -50,6 +50,7 @@ class _DetailProfilePageState extends State<DetailProfilePage> {
           final photoUrl = user['photoUrl'] ?? 'https://via.placeholder.com/150';
           final username = user['username'] ?? user['nama_organisasi'] ?? 'User';
           final email = user['email'] ?? '';
+          final status = user['status'] ?? '';
           return SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
             child: Column(
@@ -75,10 +76,10 @@ class _DetailProfilePageState extends State<DetailProfilePage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'Jumlah Like $_totalLikes',
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
-                ),
+                if (status == 'ormawa') ...[
+                  const SizedBox(height: 8),
+                  Text('Jumlah Like $_totalLikes'),
+                ],
                 const SizedBox(height: 24),
                 const Divider(),
                 const Padding(

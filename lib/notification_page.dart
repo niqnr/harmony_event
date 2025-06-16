@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:harmony_event/main.dart';
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
@@ -13,10 +14,11 @@ class _NotificationPageState extends State<NotificationPage> {
   final DatabaseReference _notificationsRef = FirebaseDatabase.instance.ref('notifikasi');
 
   void _navigateToEventDetail(String eventId) {
-    Navigator.pushNamed(
+    Navigator.push(
       context,
-      '/event-detail',
-      arguments: eventId,
+      MaterialPageRoute(
+        builder: (context) => DetailEventPage(eventKey: eventId, event: const {}),
+      ),
     );
   }
 

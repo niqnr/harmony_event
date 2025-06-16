@@ -449,6 +449,12 @@ class MyApp extends StatelessWidget {
       ),
       home: loggedIn ? const HomePage() : const LoginPage(),
       debugShowCheckedModeBanner: false,
+      routes: {
+        '/event-detail': (context) {
+          final eventId = ModalRoute.of(context)!.settings.arguments as String;
+          return DetailEventPage(eventKey: eventId, event: const {});
+        },
+      },
     );
   }
 }
@@ -465,9 +471,10 @@ class _HomePageState extends State<HomePage> {
   int _selectedNavIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String? _selectedTingkatFilter; // <--- Tambahkan ini
 
   final List<String> categories = [
-    'Terbaru', 'Lomba', 'Seminar', 'Konser', 'Pameran'
+    'Semua', 'Recruitment', 'Lomba', 'Seminar', 'Konser', 'Pameran'
   ];
 
   String? _username;
@@ -618,19 +625,47 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(width: 10),
-            // HAPUS BAGIAN INI:
-            // Container(
-            //   height: 44,
-            //   width: 44,
-            //   decoration: BoxDecoration(
-            //     color: Colors.white,
-            //     borderRadius: BorderRadius.circular(16),
-            //   ),
-            //   child: IconButton(
-            //     icon: const Icon(Icons.menu_rounded),
-            //     onPressed: () {},
-            //   ),
-            // ),
+            Container(
+              height: 44,
+              width: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: PopupMenuButton<String>(
+                icon: const Icon(Icons.menu_rounded),
+                onSelected: (selected) {
+                  setState(() {
+                    _selectedTingkatFilter = selected == 'Semua Tingkatan' ? null : selected;
+                  });
+                },
+                itemBuilder: (context) {
+                  final tingkatList = [
+                    'Semua Tingkatan',
+                    'Internasional',
+                    'Nasional',
+                    'Lembaga',
+                    'Fakultas',
+                    'Jurusan',
+                    'Lain-lain',
+                  ];
+                  return tingkatList.map((tingkat) => PopupMenuItem<String>(
+                    value: tingkat,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(tingkat),
+                        if ((_selectedTingkatFilter == null && tingkat == 'Semua Tingkatan') || _selectedTingkatFilter == tingkat)
+                          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                      ],
+                    ),
+                  )).toList();
+                },
+                offset: const Offset(0, 48), // muncul tepat di bawah tombol
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 8,
+              ),
+            ),
             ],
             ),
             const SizedBox(height: 18),
@@ -675,12 +710,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                _sectionTitle(categories[_selectedCategory]),
+                _sectionTitle(_selectedCategory == 0 ? 'Terbaru' : categories[_selectedCategory]),
                 const SizedBox(height: 8),
             // Tampilkan event terbaru jika kategori 'Terbaru' dipilih, jika tidak filter kategori
             _selectedCategory == 0
-              ? _eventList(sortBy: 'createdAt')
-              : _eventList(kategori: categories[_selectedCategory]),
+              ? _eventList(sortBy: 'createdAt', tingkat: _selectedTingkatFilter)
+              : _eventList(kategori: categories[_selectedCategory], tingkat: _selectedTingkatFilter),
                 const SizedBox(height: 24),
           ],
         );
@@ -693,8 +728,11 @@ class _HomePageState extends State<HomePage> {
               children: [
                 headerSection,
                 categoryAndFilteredList,
-                // Use the new widget for the most liked section
-                const MostLikedEventsSection(),
+                MostLikedEventsSection(
+                  tingkat: _selectedTingkatFilter,
+                  kategori: _selectedCategory == 0 ? null : categories[_selectedCategory],
+                  searchQuery: _searchQuery,
+                ),
               ],
             ),
           ),
@@ -823,11 +861,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _eventList({String? kategori, String? sortBy}) {
+  Widget _eventList({String? kategori, String? sortBy, String? tingkat}) {
     return EventList(
       kategori: kategori,
       sortBy: sortBy,
-                isFullWidth: false,
+      tingkat: tingkat, // <--- Tambahkan ini
+      isFullWidth: false,
       searchQuery: _searchQuery,
     );
   }
@@ -919,6 +958,7 @@ class EventList extends StatelessWidget {
   final String? sortBy;
   final bool isFullWidth;
   final String searchQuery;
+  final String? tingkat; // <--- Tambahkan ini
 
   const EventList({
     Key? key,
@@ -926,6 +966,7 @@ class EventList extends StatelessWidget {
     this.sortBy,
     this.isFullWidth = false,
     this.searchQuery = '',
+    this.tingkat, // <--- Tambahkan ini
   }) : super(key: key);
 
   @override
@@ -941,79 +982,103 @@ class EventList extends StatelessWidget {
           }
 
           final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
-        var items = data.entries
-            .where((e) => 
-                // Filter by category
-                (kategori == null || 
-                (e.value['kategori']?.toString().toLowerCase() == kategori?.toLowerCase())) &&
-                // Filter by search query
-                (searchQuery.isEmpty || 
-                (e.value['nama']?.toString().toLowerCase().contains(searchQuery) ?? false)))
-            .toList();
+          var items = data.entries
+              .where((e) =>
+                  // Filter by category
+                  (kategori == null ||
+                      (e.value['kategori']?.toString().toLowerCase() == kategori?.toLowerCase())) &&
+                  // Filter by search query
+                  (searchQuery.isEmpty ||
+                      (e.value['nama']?.toString().toLowerCase().contains(searchQuery) ?? false)) &&
+                  // Filter by tingkat
+                  (tingkat == null || (e.value['tingkat']?.toString() == tingkat)))
+              .toList();
 
-        if (sortBy != null) {
-          items.sort((a, b) {
-            if (sortBy == 'createdAt') {
-              return (b.value['createdAt'] ?? '').compareTo(a.value['createdAt'] ?? '');
-            } else if (sortBy == 'likes') {
-              final likesA = (a.value['likes'] ?? 0) as int;
-              final likesB = (b.value['likes'] ?? 0) as int;
-              return likesB.compareTo(likesA); // Descending order
-            }
-            return 0;
-          });
-        }
+          if (sortBy != null) {
+            items.sort((a, b) {
+              if (sortBy == 'createdAt') {
+                return (b.value['createdAt'] ?? '').compareTo(a.value['createdAt'] ?? '');
+              } else if (sortBy == 'likes') {
+                final likesA = (a.value['likes'] ?? 0) as int;
+                final likesB = (b.value['likes'] ?? 0) as int;
+                return likesB.compareTo(likesA); // Descending order
+              }
+              return 0;
+            });
+          }
 
           if (items.isEmpty) {
-          return Center(
-            child: Text(
-              searchQuery.isNotEmpty 
-                  ? 'Tidak ada event yang ditemukan untuk "$searchQuery"'
-                  : 'Belum ada event',
-            ),
-          );
-        }
+            return Center(
+              child: Text(
+                searchQuery.isNotEmpty
+                    ? 'Tidak ada event yang ditemukan untuk "${searchQuery}"'
+                    : 'Belum ada event',
+              ),
+            );
+          }
 
-        // Adjust ListView properties based on isFullWidth
-        if (isFullWidth) {
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 16),
-            itemBuilder: (context, idx) {
-              final event = items[idx].value;
-              final eventKey = items[idx].key;
-              return EventCard(
-                key: ValueKey(eventKey),
-                event: event,
-                eventKey: eventKey,
-                isFullWidth: true, // Use full width for vertical list
-              );
-            },
-          );
-        } else {
-          // Wrap horizontal ListView with SizedBox for a fixed height
-    return SizedBox(
-            height: 435, // Add fixed height for horizontal list
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
+          // Untuk MostLikedEventsSection, pastikan horizontal dan urut likes
+          if (sortBy == 'likes') {
+            return SizedBox(
+              height: 430,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, idx) {
+                  final event = items[idx].value;
+                  final eventKey = items[idx].key;
+                  return EventCard(
+                    key: ValueKey(eventKey),
+                    event: event,
+                    eventKey: eventKey,
+                    isFullWidth: false,
+                  );
+                },
+              ),
+            );
+          }
+
+          // Adjust ListView properties based on isFullWidth
+          if (isFullWidth) {
+            return ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
               itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, idx) {
+              separatorBuilder: (_, __) => const SizedBox(height: 16),
+              itemBuilder: (context, idx) {
                 final event = items[idx].value;
                 final eventKey = items[idx].key;
                 return EventCard(
                   key: ValueKey(eventKey),
                   event: event,
                   eventKey: eventKey,
-                  isFullWidth: false,
-          );
+                  isFullWidth: true, // Use full width for vertical list
+                );
+              },
+            );
+          } else {
+            // Wrap horizontal ListView with SizedBox for a fixed height
+            return SizedBox(
+              height: 435, // Add fixed height for horizontal list
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, idx) {
+                  final event = items[idx].value;
+                  final eventKey = items[idx].key;
+                  return EventCard(
+                    key: ValueKey(eventKey),
+                    event: event,
+                    eventKey: eventKey,
+                    isFullWidth: false,
+                  );
+                },
+              ),
+            );
+          }
         },
-      ),
-    );
-        }
-      },
-    );
+      );
   }
 }
 
@@ -1082,17 +1147,8 @@ class _EventCardState extends State<EventCard> {
       }
     }
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DetailEventPage(event: widget.event, eventKey: widget.eventKey),
-          ),
-        );
-      },
-      child: Container(
-        width: widget.isFullWidth ? double.infinity : 200,
+    Widget cardContent = Container(
+      width: widget.isFullWidth ? double.infinity : 200,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1112,13 +1168,13 @@ class _EventCardState extends State<EventCard> {
               topLeft: Radius.circular(16),
               topRight: Radius.circular(16),
             ),
-              child: widget.isFullWidth
-                  ? AspectRatio(aspectRatio: a4AspectRatio, child: imageWidget)
-                  : SizedBox(
-                      width: 200,
-                      height: 200 / a4AspectRatio,
-                      child: imageWidget,
-            ),
+            child: widget.isFullWidth
+                ? AspectRatio(aspectRatio: a4AspectRatio, child: imageWidget)
+                : SizedBox(
+                    width: 200,
+                    height: 200 / a4AspectRatio,
+                    child: imageWidget,
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
@@ -1126,120 +1182,99 @@ class _EventCardState extends State<EventCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    widget.event['nama'] ?? '',
+                  widget.event['nama'] ?? '',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today_rounded, size: 16, color: Colors.grey),
+                    const Icon(Icons.calendar_today_rounded, size: 16, color: Colors.black54),
                     const SizedBox(width: 4),
                     Text(
-                        waktuDisplay,
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      waktuDisplay,
+                      style: const TextStyle(fontSize: 13, color: Colors.black54),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                  children: [
-                        if (widget.event['kategori'] != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.blue),
-                      ),
-                        child: Text(
-                              widget.event['kategori'],
-                          style: const TextStyle(color: Colors.blue, fontSize: 12),
-                        ),
-                      ),
-                        if (isPaid) ...[
-                          Text(
-                            harga != null && harga.isNotEmpty ? 'Rp$harga' : '-',
-                            style: TextStyle(
-                              color: Colors.orange,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ] else ...[
-                          Text(
-                            'Gratis',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                          if (widget.eventKey != null && _likeStream != null)
-                            StreamBuilder<DatabaseEvent>(
-                              stream: _likeStream,
-                              builder: (context, snapshot) {
-                                if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-                                  return const Icon(
-                                    Icons.favorite_rounded,
-                                    size: 18,
-                                    color: Colors.grey,
-                                  );
-                                }
-
-                                final data = Map<String, dynamic>.from(
-                                    snapshot.data!.snapshot.value as Map);
-                                final user = FirebaseAuth.instance.currentUser;
-                                final List<dynamic> likedBy = data['likedBy'] ?? [];
-                                final bool isLiked = user != null && likedBy.contains(user.uid);
-                                final int likesCount = data['likes'] ?? 0;
-
-                                return GestureDetector(
-                                  onTap: () => _toggleLikeStatus(data, likedBy),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                            Icons.favorite_rounded,
-                            size: 18,
-                            color: isLiked ? Colors.red : Colors.grey,
+                    if (widget.event['kategori'] != null && widget.event['kategori'].toString().isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE3F0FF),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        const SizedBox(width: 2),
-                                      Text(
-                                        '$likesCount',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                        ],
+                        child: Text(
+                          widget.event['kategori'],
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF2D5BFF)),
+                        ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    if (isPaid)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E3),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            harga != null ? 'Rp $harga' : 'Berbayar',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFFFFA726)),
+                          ),
+                        ),
+                      ),
+                    if (!isPaid)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE6FFE3),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Gratis',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF43A047)),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.favorite, size: 16, color: Colors.redAccent),
+                    const SizedBox(width: 4),
+                    Text(
+                      (widget.event['likes'] ?? 0).toString(),
+                      style: const TextStyle(fontSize: 13, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DetailEventPage(event: widget.event, eventKey: widget.eventKey),
+          ),
+        );
+      },
+      child: cardContent,
     );
   }
 
@@ -1826,50 +1861,20 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
 }
 
 // Widget terpisah untuk section Event Paling Banyak Di Like
-class MostLikedEventsSection extends StatefulWidget {
-  const MostLikedEventsSection({Key? key}) : super(key: key);
-
-  @override
-  _MostLikedEventsSectionState createState() => _MostLikedEventsSectionState();
-}
-
-class _MostLikedEventsSectionState extends State<MostLikedEventsSection> {
-  // Replicated helper function for section title (can be refactored if needed)
-   Widget _sectionTitle(String title) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        TextButton(
-          onPressed: () {
-            // TODO: Implement navigation to All Events filtered by likes
-            // This might require passing context or a navigation callback
-             print('Lihat Semua Most Liked'); // Placeholder
-          },
-          child: const Text('Lihat Semuanya', style: TextStyle(color: Color(0xFF2D5BFF))),
-        ),
-      ],
-    );
-  }
-
-  // Replicated helper function for event list (partially)
-  // Only the sorting logic for 'likes' is needed here.
-  Widget _eventListByLikes() {
-    return const EventList(
-      sortBy: 'likes',
-      isFullWidth: false,
-    );
-  }
+class MostLikedEventsSection extends StatelessWidget {
+  final String? tingkat;
+  final String? kategori;
+  final String searchQuery;
+  const MostLikedEventsSection({Key? key, this.tingkat, this.kategori, required this.searchQuery}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('Paling Banyak Di Like'),
+        const Text('Paling Banyak Di Like', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         const SizedBox(height: 8),
-        _eventListByLikes(),
-        const SizedBox(height: 24), // Add bottom spacing
+        EventList(sortBy: 'likes', isFullWidth: true, tingkat: tingkat, kategori: kategori, searchQuery: searchQuery),
       ],
     );
   }
@@ -2007,11 +2012,10 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         const SizedBox(height: 16),
-        Text(
-          'Jumlah Like $_totalLikes',
-          style: const TextStyle(fontSize: 16, color: Colors.black87),
-        ),
-        const SizedBox(height: 16),
+        if (status == 'ormawa') ...[
+          const SizedBox(height: 8),
+          Text('Jumlah Like $_totalLikes'),
+        ],
         if (affiliation.isNotEmpty)
           Text(
             affiliation,
@@ -2034,7 +2038,7 @@ class _ProfilePageState extends State<ProfilePage> {
             IconButton(
               icon: const Icon(Icons.edit, size: 20),
               tooltip: 'Edit',
-              onPressed: () => _showEditNameDialog(username, status),
+              onPressed: () => _showEditProfileDialog(username, status, _userData!['photoUrl']),
             ),
           ],
         ),
@@ -2265,48 +2269,83 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // Tambahkan pada _ProfilePageState
-  void _showEditNameDialog(String currentName, String userStatus) async {
+  void _showEditProfileDialog(String currentName, String userStatus, String? currentPhotoUrl) async {
     final controller = TextEditingController(text: currentName);
     final isStudent = userStatus == 'student';
     final label = isStudent ? 'Username' : 'Nama Organisasi';
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || _userData == null) return;
-    showDialog(
+    XFile? pickedFile;
+    String? previewPhoto = currentPhotoUrl;
+
+    await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit $label'),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(hintText: 'Masukkan $label baru'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: Text('Edit $label & Foto Profil'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: () async {
+                  final picker = ImagePicker();
+                  final file = await picker.pickImage(source: ImageSource.gallery);
+                  if (file != null) {
+                    pickedFile = file;
+                    final bytes = await file.readAsBytes();
+                    setStateDialog(() {
+                      previewPhoto = base64Encode(bytes);
+                    });
+                  }
+                },
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundImage: (previewPhoto != null && previewPhoto?.isNotEmpty == true && !(previewPhoto?.startsWith('http') ?? false))
+                    ? MemoryImage(base64Decode(previewPhoto!))
+                    : (currentPhotoUrl != null && currentPhotoUrl.isNotEmpty ? NetworkImage(currentPhotoUrl) : null) as ImageProvider?,
+                  child: const Icon(Icons.camera_alt, size: 28, color: Colors.white70),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(hintText: 'Masukkan $label baru'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              final newName = controller.text.trim();
-              if (newName.isEmpty) return;
-              final userRef = FirebaseDatabase.instance.ref('user').child(user.uid);
-              await userRef.update(isStudent ? {'username': newName} : {'nama_organisasi': newName});
-              setState(() {
-                if (isStudent) {
-                  _userData!['username'] = newName;
-                  // update username lokal jika ada
-                  if (_userData!['username'] != null) _userData!['username'] = newName;
-                } else {
-                  _userData!['nama_organisasi'] = newName;
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final newName = controller.text.trim();
+                final user = FirebaseAuth.instance.currentUser;
+                if (user == null) return;
+                final userRef = FirebaseDatabase.instance.ref('user').child(user.uid);
+                Map<String, dynamic> updateData = {};
+                if (newName.isNotEmpty && newName != currentName) {
+                  if (isStudent) {
+                    updateData['username'] = newName;
+                  } else {
+                    updateData['nama_organisasi'] = newName;
+                  }
                 }
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$label berhasil diubah!')),
-              );
-            },
-            child: const Text('Simpan'),
-          ),
-        ],
+                if (pickedFile != null && previewPhoto != null && previewPhoto != currentPhotoUrl) {
+                  updateData['photoUrl'] = previewPhoto;
+                }
+                if (updateData.isNotEmpty) {
+                  await userRef.update(updateData);
+                  setState(() {});
+                }
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Profil berhasil diubah!')),
+                );
+              },
+              child: const Text('Simpan'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2786,11 +2825,10 @@ class _DetailProfilePageState extends State<DetailProfilePage> {
                 ),
               ),
             const SizedBox(height: 16),
-            Text(
-              'Jumlah Like $_totalLikes',
-              style: const TextStyle(fontSize: 16, color: Colors.black87),
-            ),
-            const SizedBox(height: 16),
+            if (status == 'ormawa') ...[
+              const SizedBox(height: 8),
+              Text('Jumlah Like $_totalLikes'),
+            ],
             if (affiliation.isNotEmpty)
               Text(
                 affiliation,
